@@ -8,36 +8,50 @@
 //
 //******************************************************************************
 
+#include "FS.h"
+#include "SPIFFS.h"
+
 //------------------------------------------------------------------------------
 // Variables
 
 int LED_BUILTIN = 2;
+char data_file[] = "/data.txt";
+char config_file[] = "/config.txt";
+char just_a_record[] = "1234;24.58;5678";
+
 
 // End Variables
 //------------------------------------------------------------------------------
-
-// Flash the LED at led_pin with a led_delay led_count times.
-void LedFlash(int led_pin, int led_delay, int led_count)
-{
-  for (int i = 0; i < led_count; ++i)
-  {
-    digitalWrite(led_pin, HIGH);
-    delay(led_delay);
-    digitalWrite(led_pin, LOW);
-    delay(led_delay);
-  }
-}
-
 
 
 // Arduino setup
 void setup() {
   // initialize digital pin LED_BUILTIN as an output.
+  Serial.begin(115200);
+  Serial.println("Starting Setup...");
+
   pinMode(LED_BUILTIN, OUTPUT);
+
+  if (!SPIFFS.begin()) {
+    Serial.println("SPIFFS Mount Failed");
+    return;
+  }
+
+  if( ! WriteDataFile(SPIFFS, data_file, just_a_record)) {
+    Serial.println("Write failed.");
+  }
+
+  listDir(SPIFFS, "/", 0);
+  readFile(SPIFFS, "/hello.txt");
+  readFile(SPIFFS, data_file);
+
 
   // Flash LED threetimes at end of setup
   LedFlash(LED_BUILTIN, 100, 3);
+  Serial.println("Setup done.");
+
 }
+
 
 // Arduino loop
 void loop() {
@@ -46,5 +60,4 @@ void loop() {
   // Flash LED once:
   LedFlash(LED_BUILTIN, 500, 1);
 }
-
 // END
