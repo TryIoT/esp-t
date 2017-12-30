@@ -10,11 +10,20 @@
 
 #include "FS.h"
 #include "SPIFFS.h"
+#include <Preferences.h>
+#include <WiFi.h>
+#include <ArduinoOTA.h>
+
 
 //------------------------------------------------------------------------------
 // Variables
 
 int LED_BUILTIN = 2;
+Preferences sketch_prefs;
+char ssid_value[32] = "";
+char wpa_psk_value[64] = "";
+
+
 char data_file[] = "/data.txt";
 char config_file[] = "/config.txt";
 char just_a_record[] = "1234;24.58;5678";
@@ -32,24 +41,29 @@ void setup() {
 
   pinMode(LED_BUILTIN, OUTPUT);
 
-  if (!SPIFFS.begin()) {
-    Serial.println("SPIFFS Mount Failed");
-    return;
+  if (! ReadPreferences()) {
+    Serial.println("Reading preferences failed!");
   }
 
-  if( ! WriteDataFile(SPIFFS, data_file, just_a_record)) {
-    Serial.println("Write failed.");
+  if (! SetupWifi(ssid_value, wpa_psk_value)) {
+    Serial.println("Wifi connect failed!");   
+  }
+
+  if (! SPIFFS.begin()) {
+    Serial.println("SPIFFS mount failed!");
+  }
+
+  if (! WriteDataFile(SPIFFS, data_file, just_a_record)) {
+    Serial.println("Write failed!");
   }
 
   listDir(SPIFFS, "/", 0);
   readFile(SPIFFS, "/hello.txt");
   readFile(SPIFFS, data_file);
 
-
   // Flash LED threetimes at end of setup
   LedFlash(LED_BUILTIN, 100, 3);
   Serial.println("Setup done.");
-
 }
 
 
