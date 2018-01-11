@@ -6,34 +6,36 @@
 //
 //******************************************************************************
 
-//
 // Setup WiFi
-//
 boolean SetupWifi(const char * ssid, const char * wpa_psk)
 {
+  const int wifi_timeout = 20; // Try wifi_timeout times to connect
+
   Serial.print("Connecting to ");
   Serial.println(ssid);
-  if(! WiFi.begin(ssid, wpa_psk)) {
-    return(false);
+  if (! WiFi.begin(ssid, wpa_psk)) {
+    return (false);
   } else {
-
-// Todo: implement max wating time  
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
+    for (int i = 0; i < wifi_timeout; ++i) {
+      if (WiFi.status() != WL_CONNECTED) {
+        delay(500);
+        Serial.print(".");
+      } else
+      {
+        Serial.println("");
+        Serial.print("WiFi connected, IP address: ");
+        Serial.println(WiFi.localIP());
+        return (true);
+      }
+    }
+    return (false);
   }
-  Serial.println("");
-  Serial.print("WiFi connected, IP address: ");
-  Serial.println(WiFi.localIP());
-  }
-  return(true);
 }
 
-//
 // Setup OTA
-//
-void SetupOta()
+void SetupOta(const char * ota_password)
 {
+  ArduinoOTA.setPassword(ota_password);
   ArduinoOTA
   .onStart([]() {
     String type;
