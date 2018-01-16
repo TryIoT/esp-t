@@ -16,39 +16,39 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 
+#define SERIAL_SPEED 115200
 #define ONE_WIRE_PIN 23
 #define TEMPERATURE_PRECISION 12
 #define MAX_SENSORS 8
-
+#define LED 2
+#define TIMER0_PRESCALER 80
 
 //------------------------------------------------------------------------------
 // Variables
 
-int LED_BUILTIN = 2;
-
 Preferences sketch_prefs;
 
-// Wifi related
+// Wifi related, set to preferences later
 char ssid_value[32] = "";
 char wpa_psk_value[64] = "";
 char ota_password_value[32] = "";
 
 // Timer
-hw_timer_t * SensorTimer = NULL;
-volatile SemaphoreHandle_t SensorTimerSemaphore;
-portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
+hw_timer_t * sensor_timer = NULL;
+volatile SemaphoreHandle_t sensor_timer_semaphore;
+portMUX_TYPE timer_mux = portMUX_INITIALIZER_UNLOCKED;
+const uint32_t sample_interval = 5000000;
 
-// Files
+// File IO
 char data_file[] = "/data.txt";
-char config_file[] = "/config.txt";
 char just_a_record[] = "1234;24.58;5678";
 
-OneWire onew(ONE_WIRE_PIN); // Create OneWire Object
-DallasTemperature sensors(&onew);
+// Onewire and sensors
+OneWire one_wire_bus(ONE_WIRE_PIN);
+DallasTemperature sensors(&one_wire_bus);
 uint8_t ds18_count = 0; // number of DS18B20 sensors
-// arrays to hold 8 device addresses and temperatures
-DeviceAddress ds18_sensors[MAX_SENSORS];
-float temperatures[MAX_SENSORS];
+DeviceAddress ds18_sensors[MAX_SENSORS]; // array to hold device addresses
+float temperatures[MAX_SENSORS]; // array to hold temperatures
 
 // End Variables
 //------------------------------------------------------------------------------
@@ -56,25 +56,25 @@ float temperatures[MAX_SENSORS];
 // Sensor Timer ISR
 void IRAM_ATTR onTimer() {
   // Increment the counter and set the time of ISR
-  portENTER_CRITICAL_ISR(&timerMux);
-  portEXIT_CRITICAL_ISR(&timerMux);
+  portENTER_CRITICAL_ISR(&timer_mux);
+  portEXIT_CRITICAL_ISR(&timer_mux);
   // Give a semaphore that we can check in the loop
-  xSemaphoreGiveFromISR(SensorTimerSemaphore, NULL);
+  xSemaphoreGiveFromISR(sensor_timer_semaphore, NULL);
 }
 
 // Arduino setup
 void setup() {
-  // initialize digital pin LED_BUILTIN as an output.
-  Serial.begin(115200);
+  // initialize digital pin LED as an output.
+  Serial.begin(SERIAL_SPEED);
   Serial.println("Starting Setup...");
 
-  pinMode(LED_BUILTIN, OUTPUT);
+  pinMode(LED, OUTPUT);
 
   if (! ReadPreferences()) {
     Serial.println("Reading preferences failed!");
   }
 
-  /*
+  /* Wifi temp disabled !!!
       if (! SetupWifi(ssid_value, wpa_psk_value)) {
       Serial.println("Wifi connect failed!");
     } else {
@@ -83,11 +83,11 @@ void setup() {
   */
 
   // Timer
-  SensorTimerSemaphore = xSemaphoreCreateBinary();
-  SensorTimer = timerBegin(0, 80, true);
-  timerAttachInterrupt(SensorTimer, &onTimer, true);
-  timerAlarmWrite(SensorTimer, 5000000, true);
-  timerAlarmEnable(SensorTimer);
+  sensor_timer_semaphore = xSemaphoreCreateBinary();
+  sensor_timer = timerBegin(0, TIMER0_PRESCALER, true);
+  timerAttachInterrupt(sensor_timer, &onTimer, true);
+  timerAlarmWrite(sensor_timer, sample_interval, true);
+  timerAlarmEnable(sensor_timer);
 
   // Sensors
   sensors.begin(); // Start up the Dallas library
@@ -98,9 +98,9 @@ void setup() {
   Serial.println(" devices.");
 
   // Search for sensors:
-  onew.reset_search();
+  one_wire_bus.reset_search();
   for (int i = 0; i < ds18_count; ++i) {
-    if (!onew.search(ds18_sensors[i])) Serial.println("Unable to find address for sensor.");
+    if (!one_wire_bus.search(ds18_sensors[i])) Serial.println("Unable to find address for sensor.");
     PrintAddress(ds18_sensors[i]);
     Serial.println();
     sensors.setResolution(ds18_sensors[i], TEMPERATURE_PRECISION);
@@ -119,19 +119,17 @@ void setup() {
   readFile(SPIFFS, data_file);
 
   // Flash LED threetimes at end of setup
-  LedFlash(LED_BUILTIN, 100, 3);
+  LedFlash(LED, 100, 3);
   Serial.println("Setup done.");
 }
 
 
 // Arduino loop
 void loop() {
-  //  Serial.println("Check for OTA...");
   //  ArduinoOTA.handle();
 
   // Check for timer interrupt
-  if (xSemaphoreTake(SensorTimerSemaphore, 0) == pdTRUE) {
-    Serial.println("Timer Interrupt detected!");
+  if (xSemaphoreTake(sensor_timer_semaphore, 0) == pdTRUE) {
     // request to all devices on the bus
     Serial.print("Requesting temperatures...");
     sensors.requestTemperatures();
@@ -140,14 +138,12 @@ void loop() {
     // get temperatures
     Serial.println("Temperatures: ");
     for (int i = 0; i < ds18_count; ++i) {
-
       temperatures[i] = sensors.getTempC(ds18_sensors[i]);
       Serial.println(temperatures[i]);
     }
-
   }
 
   // Flash LED once:
-  LedFlash(LED_BUILTIN, 500, 1);
+  LedFlash(LED, 500, 1);
 }
 // END
