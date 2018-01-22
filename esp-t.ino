@@ -8,6 +8,7 @@
 //
 //******************************************************************************
 
+#include <time.h>
 #include <FS.h>
 #include <SPIFFS.h>
 #include <Preferences.h>
@@ -15,12 +16,14 @@
 #include <ArduinoOTA.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
+#include <apps/sntp/sntp.h>
+#include <lwip/sockets.h>
 
 #define SERIAL_SPEED 115200
-#define ONE_WIRE_PIN 23
+#define ONE_WIRE_PIN 22
 #define TEMPERATURE_PRECISION 12
 #define MAX_SENSORS 8
-#define LED 2
+#define LED 5
 #define TIMER0_PRESCALER 80
 
 //------------------------------------------------------------------------------
@@ -46,7 +49,6 @@ char just_a_record[] = "1234;24.58;5678";
 // Onewire and sensors
 OneWire one_wire_bus(ONE_WIRE_PIN);
 DallasTemperature sensors(&one_wire_bus);
-uint8_t ds18_count = 0; // number of DS18B20 sensors
 DeviceAddress ds18_sensors[MAX_SENSORS]; // array to hold device addresses
 float temperatures[MAX_SENSORS]; // array to hold temperatures
 
@@ -74,12 +76,19 @@ void setup() {
     Serial.println("Reading preferences failed!");
   }
 
-  /* Wifi temp disabled !!!
-      if (! SetupWifi(ssid_value, wpa_psk_value)) {
-      Serial.println("Wifi connect failed!");
-    } else {
-      SetupOta(ota_password_value);
-    }
+  if (! SetupWifi(ssid_value, wpa_psk_value)) {
+    Serial.println("Wifi connect failed!");
+  } else {
+    SetupOta(ota_password_value);
+  }
+
+  // Get UTC time
+
+  /*  ip_addr_t addr;
+    sntp_setoperatingmode(SNTP_OPMODE_POLL);
+    inet_pton(AF_INET, "89.163.241.149", &addr);
+    sntp_setserver(0, &addr);
+    sntp_init();
   */
 
   // Timer
@@ -89,22 +98,14 @@ void setup() {
   timerAlarmWrite(sensor_timer, sample_interval, true);
   timerAlarmEnable(sensor_timer);
 
-  // Sensors
-  sensors.begin(); // Start up the Dallas library
-  // locate devices on the bus
-  ds18_count = sensors.getDeviceCount();
-  Serial.print("Found ");
-  Serial.print(ds18_count);
-  Serial.println(" devices.");
-
-  // Search for sensors:
-  one_wire_bus.reset_search();
-  for (int i = 0; i < ds18_count; ++i) {
-    if (!one_wire_bus.search(ds18_sensors[i])) Serial.println("Unable to find address for sensor.");
-    PrintAddress(ds18_sensors[i]);
-    Serial.println();
-    sensors.setResolution(ds18_sensors[i], TEMPERATURE_PRECISION);
-  }
+  xTaskCreatePinnedToCore(
+    SearchDS18B20,                  /* Function to implement the task */
+    "SearchDS18B20",                /* Name of the task */
+    4000,                           /* Stack size in words */
+    NULL,                           /* Task input parameter */
+    5,                              /* Priority of the task */
+    NULL,                           /* Task handle. */
+    1);                             /* Core where the task should run */
 
   if (! SPIFFS.begin()) {
     Serial.println("SPIFFS mount failed!");
@@ -135,12 +136,16 @@ void loop() {
     sensors.requestTemperatures();
     Serial.println("DONE");
 
-    // get temperatures
-    Serial.println("Temperatures: ");
-    for (int i = 0; i < ds18_count; ++i) {
-      temperatures[i] = sensors.getTempC(ds18_sensors[i]);
-      Serial.println(temperatures[i]);
-    }
+    time_t time_stamp = time(NULL);
+
+    xTaskCreatePinnedToCore(
+      GetTemperatures,                /* Function to implement the task */
+      "GetTemperatures",              /* Name of the task */
+      4000,                           /* Stack size in words */
+      NULL,                           /* Task input parameter */
+      5,                              /* Priority of the task */
+      NULL,                           /* Task handle. */
+      1);                             /* Core where the task should run */
   }
 
   // Flash LED once:
