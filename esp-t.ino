@@ -46,12 +46,6 @@ const uint32_t sample_interval = 5000000;
 char data_file[] = "/data.txt";
 char just_a_record[] = "1234;24.58;5678";
 
-// Onewire and sensors
-OneWire one_wire_bus(ONE_WIRE_PIN);
-DallasTemperature sensors(&one_wire_bus);
-DeviceAddress ds18_sensors[MAX_SENSORS]; // array to hold device addresses
-float temperatures[MAX_SENSORS]; // array to hold temperatures
-
 // End Variables
 //------------------------------------------------------------------------------
 
@@ -66,7 +60,6 @@ void IRAM_ATTR onTimer() {
 
 // Arduino setup
 void setup() {
-  // initialize digital pin LED as an output.
   Serial.begin(SERIAL_SPEED);
   Serial.println("Starting Setup...");
 
@@ -91,22 +84,6 @@ void setup() {
     sntp_init();
   */
 
-  // Timer
-  sensor_timer_semaphore = xSemaphoreCreateBinary();
-  sensor_timer = timerBegin(0, TIMER0_PRESCALER, true);
-  timerAttachInterrupt(sensor_timer, &onTimer, true);
-  timerAlarmWrite(sensor_timer, sample_interval, true);
-  timerAlarmEnable(sensor_timer);
-
-  xTaskCreatePinnedToCore(
-    SearchDS18B20,                  /* Function to implement the task */
-    "SearchDS18B20",                /* Name of the task */
-    4000,                           /* Stack size in words */
-    NULL,                           /* Task input parameter */
-    5,                              /* Priority of the task */
-    NULL,                           /* Task handle. */
-    1);                             /* Core where the task should run */
-
   if (! SPIFFS.begin()) {
     Serial.println("SPIFFS mount failed!");
   }
@@ -119,6 +96,23 @@ void setup() {
   readFile(SPIFFS, "/hello.txt");
   readFile(SPIFFS, data_file);
 
+  // launch sensor task on core 1:
+  xTaskCreatePinnedToCore(
+    SensorCycle,                  /* Function to implement the task */
+    "SensorCycle",                /* Name of the task */
+    4000,                           /* Stack size in words */
+    NULL,                           /* Task input parameter */
+    5,                              /* Priority of the task */
+    NULL,                           /* Task handle. */
+    1);                             /* Core where the task should run */
+
+  // Start the timer for the sensor cycle
+  sensor_timer_semaphore = xSemaphoreCreateBinary();
+  sensor_timer = timerBegin(0, TIMER0_PRESCALER, true);
+  timerAttachInterrupt(sensor_timer, &onTimer, true);
+  timerAlarmWrite(sensor_timer, sample_interval, true);
+  timerAlarmEnable(sensor_timer);
+
   // Flash LED threetimes at end of setup
   LedFlash(LED, 100, 3);
   Serial.println("Setup done.");
@@ -127,26 +121,7 @@ void setup() {
 
 // Arduino loop
 void loop() {
-  //  ArduinoOTA.handle();
-
-  // Check for timer interrupt
-  if (xSemaphoreTake(sensor_timer_semaphore, 0) == pdTRUE) {
-    // request to all devices on the bus
-    Serial.print("Requesting temperatures...");
-    sensors.requestTemperatures();
-    Serial.println("DONE");
-
-    time_t time_stamp = time(NULL);
-
-    xTaskCreatePinnedToCore(
-      GetTemperatures,                /* Function to implement the task */
-      "GetTemperatures",              /* Name of the task */
-      4000,                           /* Stack size in words */
-      NULL,                           /* Task input parameter */
-      5,                              /* Priority of the task */
-      NULL,                           /* Task handle. */
-      1);                             /* Core where the task should run */
-  }
+  ArduinoOTA.handle();
 
   // Flash LED once:
   LedFlash(LED, 500, 1);
