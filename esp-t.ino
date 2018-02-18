@@ -16,8 +16,7 @@
 #include <ArduinoOTA.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
-#include <apps/sntp/sntp.h>
-#include <lwip/sockets.h>
+#include <ArduinoJson.h>
 
 #define SERIAL_SPEED 115200
 #define ONE_WIRE_PIN 22
@@ -25,6 +24,8 @@
 #define MAX_SENSORS 8
 #define LED 5
 #define TIMER0_PRESCALER 80
+#define ARDUINOJSON_ENABLE_PROGMEM 0
+
 
 //------------------------------------------------------------------------------
 // Variables
@@ -75,36 +76,29 @@ void setup() {
     SetupOta(ota_password_value);
   }
 
-  // Get UTC time
+  /* Commented out, not needed for now, causes serial trouble
+    if (! SPIFFS.begin()) {
+      Serial.println("SPIFFS mount failed!");
+    }
 
-  /*  ip_addr_t addr;
-    sntp_setoperatingmode(SNTP_OPMODE_POLL);
-    inet_pton(AF_INET, "89.163.241.149", &addr);
-    sntp_setserver(0, &addr);
-    sntp_init();
+    if (! WriteDataFile(SPIFFS, data_file, just_a_record)) {
+      Serial.println("Write failed!");
+    }
+
+    listDir(SPIFFS, "/", 0);
+    readFile(SPIFFS, "/hello.txt");
+    readFile(SPIFFS, data_file);
   */
-
-  if (! SPIFFS.begin()) {
-    Serial.println("SPIFFS mount failed!");
-  }
-
-  if (! WriteDataFile(SPIFFS, data_file, just_a_record)) {
-    Serial.println("Write failed!");
-  }
-
-  listDir(SPIFFS, "/", 0);
-  readFile(SPIFFS, "/hello.txt");
-  readFile(SPIFFS, data_file);
 
   // launch sensor task on core 1:
   xTaskCreatePinnedToCore(
-    SensorCycle,                  /* Function to implement the task */
-    "SensorCycle",                /* Name of the task */
-    4000,                           /* Stack size in words */
-    NULL,                           /* Task input parameter */
-    5,                              /* Priority of the task */
-    NULL,                           /* Task handle. */
-    1);                             /* Core where the task should run */
+    SensorCycle,                  // Function to implement the task
+    "SensorCycle",                // Name of the task
+    4000,                         // Stack size in words
+    NULL,                         // Task input parameter
+    5,                            // Priority of the task
+    NULL,                         // Task handle.
+    1);                           // Core where the task should run
 
   // Start the timer for the sensor cycle
   sensor_timer_semaphore = xSemaphoreCreateBinary();
@@ -117,7 +111,6 @@ void setup() {
   LedFlash(LED, 100, 3);
   Serial.println("Setup done.");
 }
-
 
 // Arduino loop
 void loop() {
