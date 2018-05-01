@@ -9,6 +9,7 @@
 //******************************************************************************
 
 #include <time.h>
+#include <string.h>
 #include <FS.h>
 #include <SPIFFS.h>
 #include <Preferences.h>
@@ -17,6 +18,7 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <ArduinoJson.h>
+#include <PubSubClient.h>
 
 #define SERIAL_SPEED 115200
 #define ONE_WIRE_PIN 22
@@ -37,6 +39,12 @@ char ssid_value[32] = "";
 char wpa_psk_value[64] = "";
 char ota_password_value[32] = "";
 
+WiFiClient esp_client;
+PubSubClient mqtt_client(esp_client);
+const char * mqtt_server = "10.1.1.13";
+const int mqtt_port = 1883;
+const char * mqtt_topic = "iserbach4/test";
+
 // Timer
 hw_timer_t * sensor_timer = NULL;
 volatile SemaphoreHandle_t sensor_timer_semaphore;
@@ -46,6 +54,7 @@ const uint32_t sample_interval = 5000000;
 // File IO
 char data_file[] = "/data.txt";
 char just_a_record[] = "1234;24.58;5678";
+
 
 // End Variables
 //------------------------------------------------------------------------------
@@ -73,8 +82,22 @@ void setup() {
   if (! SetupWifi(ssid_value, wpa_psk_value)) {
     Serial.println("Wifi connect failed!");
   } else {
+    // Start OTA:
     SetupOta(ota_password_value);
-  }
+
+    // Connect to MQTT:
+    mqtt_client.setServer(mqtt_server, mqtt_port);
+    while (!mqtt_client.connected()) {
+      Serial.println("Connecting to MQTT...");
+      if (mqtt_client.connect("ESP32Client")) {
+        Serial.println("connected");
+      } else {
+        Serial.print("failed with state ");
+        Serial.print(mqtt_client.state());
+        delay(2000);
+      } // end if
+    } // end while
+  } // end else
 
   /* Commented out, not needed for now, causes serial trouble
     if (! SPIFFS.begin()) {
